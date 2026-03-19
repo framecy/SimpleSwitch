@@ -1,19 +1,33 @@
 import Cocoa
 import Carbon
 
+enum AppInputStrategy: Int {
+    case globalDefault = 0 // 遵循全局默认（强切英文）
+    case forceEnglish = 1
+    case forceChinese = 2
+    case keepCurrent = 3
+}
+
 class InputMethodManager {
     static let shared = InputMethodManager()
     
     private var englishInputSources: [TISInputSource] = []
+    private var chineseInputSources: [TISInputSource] = []
+    
     var onInputMethodChanged: ((String) -> Void)?
+    var currentAppBundleIdentifier: String?
+    var currentAppName: String?
+    
+    var onAppChanged: (() -> Void)?
     
     init() {
-        loadEnglishInputSources()
+        loadInputSources()
         setupObserver()
     }
     
-    func loadEnglishInputSources() {
+    func loadInputSources() {
         englishInputSources.removeAll()
+        chineseInputSources.removeAll()
         
         let filter = [kTISPropertyInputSourceIsSelectCapable as String: true]
         guard let sourceList = TISCreateInputSourceList(filter as CFDictionary, false)?.takeRetainedValue() as? [TISInputSource] else {
@@ -24,27 +38,67 @@ class InputMethodManager {
             if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID),
                let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String? {
                 
-                if id.contains("com.apple.keylayout.ABC") || id.contains("com.apple.keylayout.US") || (id.contains("US") && !id.contains("Chinese")) {
+                let lowerId = id.lowercased()
+                
+                // 判断英文
+                if lowerId.contains("com.apple.keylayout.abc") || lowerId.contains("com.apple.keylayout.us") || (lowerId.contains("us") && !lowerId.contains("chinese")) {
                     englishInputSources.append(source)
+                }
+                
+                // 判断中文
+                if lowerId.contains("chinese") || lowerId.contains("pinyin") || lowerId.contains("sogou") || lowerId.contains("wubi") || lowerId.contains("baidu") || lowerId.contains("shuangpin") {
+                    chineseInputSources.append(source)
                 }
             }
         }
     }
     
     func switchToEnglish() {
-        if englishInputSources.isEmpty {
-            loadEnglishInputSources()
-        }
-        
+        if englishInputSources.isEmpty { loadInputSources() }
         for source in englishInputSources {
-            if TISSelectInputSource(source) == noErr {
-                return
-            }
+            if TISSelectInputSource(source) == noErr { return }
+        }
+    }
+    
+    func switchToChinese() {
+        if chineseInputSources.isEmpty { loadInputSources() }
+        for source in chineseInputSources {
+            if TISSelectInputSource(source) == noErr { return }
+        }
+    }
+    
+    func applyStrategy(for bundleIdentifier: String, appName: String?) {
+        self.currentAppBundleIdentifier = bundleIdentifier
+        self.currentAppName = appName
+        
+        let strategyValue = UserDefaults.standard.integer(forKey: "AppStrategy_\(bundleIdentifier)")
+        let strategy = AppInputStrategy(rawValue: strategyValue) ?? .globalDefault
+        
+        // 只有开启了总开关才执行策略跳转（在 AppDelegate 中判断总开关，但为了安全这里也可以先直接跳转。为了解耦，交由 AppDelegate 决定是否调用 applyStrategy 会更好，但目前为了封装，外部只需调用即可）
+        
+        switch strategy {
+        case .globalDefault, .forceEnglish:
+            switchToEnglish()
+        case .forceChinese:
+            switchToChinese()
+        case .keepCurrent:
+            break
         }
         
-        if let firstEnglish = englishInputSources.first {
-            TISSelectInputSource(firstEnglish)
+        DispatchQueue.main.async {
+            self.onAppChanged?()
         }
+    }
+    
+    func setStrategy(_ strategy: AppInputStrategy, for bundleIdentifier: String) {
+        UserDefaults.standard.set(strategy.rawValue, forKey: "AppStrategy_\(bundleIdentifier)")
+        // 立刻应用新策略
+        applyStrategy(for: bundleIdentifier, appName: currentAppName)
+    }
+    
+    func getStrategy(for bundleIdentifier: String) -> AppInputStrategy {
+        let strategyValue = UserDefaults.standard.integer(forKey: "AppStrategy_\(bundleIdentifier)")
+        return AppInputStrategy(rawValue: strategyValue) ?? .globalDefault
     }
     
     // 获取当前输入法的简写名称（简 / EN）
@@ -85,11 +139,6 @@ class InputMethodManager {
     }
     
     @objc private func handleInputMethodChange() {
-        // macOS 原生输入法切换时，立刻暂停焦点监听，并且取消任何已经在队列中的强制切英文任务，防止与大写锁定 HUD 抢夺焦点时引发连点失败。
-        DispatchQueue.main.async {
-            FocusObserver.shared.pauseObserving(for: 1.0)
-        }
-        
         // 延迟 0.1 秒再查询并刷新 UI，让出系统底层的渲染和初始化时间，避免死锁卡顿。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }

@@ -1,15 +1,15 @@
 import Cocoa
 import ServiceManagement
 
+import Cocoa
+import ServiceManagement
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var isEnabled = true
     var hudController: HUDWindowController?
-    var lastManualSwitchTime: Date?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        checkAccessibilityPermissions()
-        
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem.button {
@@ -17,29 +17,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateStatusBarButtonTitle()
         }
         
-        setupMenu()
-        
         hudController = HUDWindowController()
         
-        // 监听输入法切换
+        // 监听输入法状态变更（更新状态栏文字与弹窗）
         InputMethodManager.shared.onInputMethodChanged = { [weak self] name in
-            self?.lastManualSwitchTime = Date()
             self?.updateStatusBarButtonTitle()
             self?.hudController?.showHUD(with: name)
         }
         
-        // 初始化辅助功能监听
-        FocusObserver.shared.onFocusLost = { [weak self] in
-            guard let self = self, self.isEnabled else { return }
-            
-            // 如果距离上一次手动切换不到 1秒，忽略这次焦点丢失，防止与系统HUD或快捷键切换冲突打架导致长按大写被触发
-            if let lastTime = self.lastManualSwitchTime, Date().timeIntervalSince(lastTime) < 1.0 {
-                return
-            }
-            
-            InputMethodManager.shared.switchToEnglish()
+        // 当活动应用变更，或者策略变更时，刷新系统菜单
+        InputMethodManager.shared.onAppChanged = { [weak self] in
+            self?.setupMenu()
         }
-        FocusObserver.shared.start()
+        
+        // 绑定系统激活事件
+        AppObserver.shared.onAppActivated = { [weak self] bundleId, appName in
+            guard let self = self else { return }
+            
+            if self.isEnabled {
+                InputMethodManager.shared.applyStrategy(for: bundleId, appName: appName)
+            } else {
+                // 就算未开启总开关，也要更新状态存储，以便菜单能够渲染当前 App
+                InputMethodManager.shared.currentAppBundleIdentifier = bundleId
+                InputMethodManager.shared.currentAppName = appName
+                self.setupMenu()
+            }
+        }
+        
+        AppObserver.shared.start()
+        setupMenu()
     }
     
     func updateStatusBarButtonTitle() {
@@ -52,15 +58,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMenu() {
         let menu = NSMenu()
         
-        let enableItem = NSMenuItem(title: "✓ 自动切换到英文", action: #selector(toggleAutoSwitch), keyEquivalent: "")
-        enableItem.tag = 100
+        // 动态生成部分
+        if let appName = InputMethodManager.shared.currentAppName,
+           let bundleId = InputMethodManager.shared.currentAppBundleIdentifier {
+            
+            let titleItem = NSMenuItem(title: "[+] 当前前台应用: \(appName)", action: nil, keyEquivalent: "")
+            titleItem.isEnabled = false
+            menu.addItem(titleItem)
+            
+            let strategy = InputMethodManager.shared.getStrategy(for: bundleId)
+            
+            let s0 = NSMenuItem(title: "    默认 (切回英文)", action: #selector(setStrategy(_:)), keyEquivalent: "")
+            s0.tag = AppInputStrategy.globalDefault.rawValue
+            s0.state = strategy == .globalDefault ? .on : .off
+            menu.addItem(s0)
+            
+            let s1 = NSMenuItem(title: "    强制为英文", action: #selector(setStrategy(_:)), keyEquivalent: "")
+            s1.tag = AppInputStrategy.forceEnglish.rawValue
+            s1.state = strategy == .forceEnglish ? .on : .off
+            menu.addItem(s1)
+            
+            let s2 = NSMenuItem(title: "    强制为中文", action: #selector(setStrategy(_:)), keyEquivalent: "")
+            s2.tag = AppInputStrategy.forceChinese.rawValue
+            s2.state = strategy == .forceChinese ? .on : .off
+            menu.addItem(s2)
+            
+            let s3 = NSMenuItem(title: "    保持原状态", action: #selector(setStrategy(_:)), keyEquivalent: "")
+            s3.tag = AppInputStrategy.keepCurrent.rawValue
+            s3.state = strategy == .keepCurrent ? .on : .off
+            menu.addItem(s3)
+            
+            menu.addItem(NSMenuItem.separator())
+        }
+        
+        let enableItem = NSMenuItem(title: isEnabled ? "✓ 开启 App 自动切换" : "  开启 App 自动切换", action: #selector(toggleAutoSwitch(_:)), keyEquivalent: "")
         menu.addItem(enableItem)
         
-        let loginItem = NSMenuItem(title: "开机自启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        loginItem.tag = 200
-        if SMAppService.mainApp.status == .enabled {
-            loginItem.title = "✓ 开机自启动"
-        }
+        let loginStatus = SMAppService.mainApp.status == .enabled
+        let loginItem = NSMenuItem(title: loginStatus ? "✓ 开机自启动" : "  开机自启动", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         menu.addItem(loginItem)
         
         menu.addItem(NSMenuItem.separator())
@@ -69,25 +104,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
     
-    func checkAccessibilityPermissions() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        
-        if !accessEnabled {
-            let alert = NSAlert()
-            alert.messageText = "需要辅助功能权限"
-            alert.informativeText = "请在“系统设置 -> 隐私与安全性 -> 辅助功能”中允许 SmartInputSwitcher 执行，以便监听输入焦点。"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "确定")
-            alert.runModal()
+    @objc func setStrategy(_ sender: NSMenuItem) {
+        guard let bundleId = InputMethodManager.shared.currentAppBundleIdentifier else { return }
+        if let newStrategy = AppInputStrategy(rawValue: sender.tag) {
+            InputMethodManager.shared.setStrategy(newStrategy, for: bundleId)
+            setupMenu()
         }
     }
     
     @objc func toggleAutoSwitch(_ sender: NSMenuItem) {
         isEnabled.toggle()
-        if let menu = statusItem.menu, let item = menu.item(withTag: 100) {
-            item.title = isEnabled ? "✓ 自动切换到英文" : "  自动切换到英文"
-        }
+        AppObserver.shared.isEnabled = isEnabled
+        setupMenu()
     }
     
     @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
@@ -95,11 +123,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             if service.status == .enabled {
                 try service.unregister()
-                sender.title = "  开机自启动"
             } else {
                 try service.register()
-                sender.title = "✓ 开机自启动"
             }
+            setupMenu()
         } catch {
             print("Failed to toggle Launch at Login: \(error)")
         }
