@@ -16,15 +16,41 @@ SimpleSwitch 是一款轻量级、极致丝滑的 macOS 智能输入法切换工
 - **硬件支持**：完美支持搭载 Apple Silicon (M1/M2/M3/M4) 芯片的 Mac 设备，兼容 Intel 架构。
 - **权限要求**：**必须**在“系统设置 -> 隐私与安全性 -> 辅助功能”中允许本应用控制您的电脑，才能正常实现输入框焦点监听。
 
-## 🚀 安装与编译
+## 🚀 安装与部署
 
-如果您想自行编译该项目，请遵循以下步骤：
+如果您想自行编译该项目，请在终端 (Terminal) 中执行以下步骤：
 
-1. 克隆或下载本项目源码。
-2. 确保您的开发环境中安装了最新版本的 Xcode (推荐 15.0+) 和 Swift 工具链。
-3. 如果项目通过 `XcodeGen` 管理，请先安装 `xcodegen`：`brew install xcodegen`。
-4. 运行 `xcodegen` 生成 `SimpleSwitch.xcodeproj` 项目文件。
-5. 在 Xcode 中打开项目，选择您的开发证书后即可编译并在本地运行。
+1. **获取源码并进入目录**：
+   ```bash
+   git clone https://github.com/您的用户名/SimpleSwitch.git
+   cd SimpleSwitch
+   ```
+
+2. **安装工程生成工具** (需提前安装 Homebrew)：
+   ```bash
+   brew install xcodegen
+   ```
+
+3. **生成 Xcode 项目结构**：
+   ```bash
+   xcodegen generate
+   ```
+
+4. **一键编译、安装并运行**：
+   执行以下命令，程序会自动编译、将其移动至 `应用程序` 文件夹，并立刻启动：
+   ```bash
+   # 编译到零时目录，防止 iCloud 扩展属性导致构建失败
+   xcodebuild -scheme SmartInputSwitcher CONFIGURATION_BUILD_DIR="/tmp/SimpleSwitchBuild" build
+   
+   # 杀掉旧进程并覆盖安装新版本
+   killall SmartInputSwitcher || true
+   rm -rf /Applications/SmartInputSwitcher.app
+   cp -R /tmp/SimpleSwitchBuild/SmartInputSwitcher.app /Applications/
+   
+   # 打开应用
+   open /Applications/SmartInputSwitcher.app
+   ```
+   > 💡 **提示**：如果您习惯使用图形界面，在第 3 步后直接双击打开 `SmartInputSwitcher.xcodeproj`，然后在 Xcode 中点击顶部的 `Run` (运行) 按钮即可。
 
 ## 📖 使用说明
 
