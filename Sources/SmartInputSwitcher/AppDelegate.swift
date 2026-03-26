@@ -1,9 +1,6 @@
 import Cocoa
 import ServiceManagement
 
-import Cocoa
-import ServiceManagement
-
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var isEnabled = true
@@ -25,9 +22,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hudController?.showHUD(with: name)
         }
         
-        // 当活动应用变更，或者策略变更时，刷新系统菜单
+        // ── 性能优化：菜单懒构建，仅在用户点击时才构建 ──
+        // 不再监听 onAppChanged 来频繁调用 setupMenu()
         InputMethodManager.shared.onAppChanged = { [weak self] in
-            self?.setupMenu()
+            // 只更新状态栏标题，菜单将在打开时动态构建
+            self?.updateStatusBarButtonTitle()
         }
         
         // 绑定系统激活事件
@@ -37,15 +36,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if self.isEnabled {
                 InputMethodManager.shared.applyStrategy(for: bundleId, appName: appName)
             } else {
-                // 就算未开启总开关，也要更新状态存储，以便菜单能够渲染当前 App
+                // 就算未开启总开关，也要更新状态存储
                 InputMethodManager.shared.currentAppBundleIdentifier = bundleId
                 InputMethodManager.shared.currentAppName = appName
-                self.setupMenu()
             }
         }
         
         AppObserver.shared.start()
-        setupMenu()
+        
+        // 使用 NSMenuDelegate 实现懒构建
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
     }
     
     func updateStatusBarButtonTitle() {
@@ -55,8 +57,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func setupMenu() {
-        let menu = NSMenu()
+    /// 构建菜单内容（仅在菜单即将显示时调用）
+    private func buildMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
         
         // 动态生成部分
         if let appName = InputMethodManager.shared.currentAppName,
@@ -100,22 +103,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
-        
-        statusItem.menu = menu
     }
     
     @objc func setStrategy(_ sender: NSMenuItem) {
         guard let bundleId = InputMethodManager.shared.currentAppBundleIdentifier else { return }
         if let newStrategy = AppInputStrategy(rawValue: sender.tag) {
             InputMethodManager.shared.setStrategy(newStrategy, for: bundleId)
-            setupMenu()
         }
     }
     
     @objc func toggleAutoSwitch(_ sender: NSMenuItem) {
         isEnabled.toggle()
         AppObserver.shared.isEnabled = isEnabled
-        setupMenu()
     }
     
     @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
@@ -126,7 +125,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 try service.register()
             }
-            setupMenu()
         } catch {
             print("Failed to toggle Launch at Login: \(error)")
         }
@@ -134,5 +132,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func quit() {
         NSApplication.shared.terminate(nil)
+    }
+}
+
+// ── 性能优化：菜单仅在用户打开时才构建，而非每次 App 切换时 ──
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        buildMenu(menu)
     }
 }

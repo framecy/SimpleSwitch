@@ -16,6 +16,10 @@ class AppObserver {
         }
     }
     
+    // ── 性能优化：跳过同 App 重复激活 & coalesce 快速切换 ──
+    private var lastActivatedBundleId: String?
+    private var activateWorkItem: DispatchWorkItem?
+    
     func start() {
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -27,6 +31,7 @@ class AppObserver {
         // 初始应用
         if let activeApp = NSWorkspace.shared.frontmostApplication,
            let bundleId = activeApp.bundleIdentifier {
+            lastActivatedBundleId = bundleId
             onAppActivated?(bundleId, activeApp.localizedName)
         }
     }
@@ -39,6 +44,17 @@ class AppObserver {
             return
         }
         
-        onAppActivated?(bundleIdentifier, app.localizedName)
+        // ── 跳过同 App 重复激活事件 ──
+        guard bundleIdentifier != lastActivatedBundleId else { return }
+        lastActivatedBundleId = bundleIdentifier
+        
+        // ── Coalesce 快速 Cmd+Tab 切换：取消之前未执行的回调，只保留最后一次 ──
+        activateWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.onAppActivated?(bundleIdentifier, app.localizedName)
+        }
+        activateWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 }

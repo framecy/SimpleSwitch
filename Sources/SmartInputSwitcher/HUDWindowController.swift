@@ -66,6 +66,12 @@ class HUDWindowController: NSWindowController {
         label.stringValue = text
         hideWorkItem?.cancel()
         
+        // ── 性能优化：如果 HUD 已可见，只更新文字和重置隐藏计时器，跳过淡入动画 ──
+        if window?.alphaValue == 1.0 {
+            resetHideTimer()
+            return
+        }
+        
         // 重新计算并设置窗口位置到当前激活屏幕的右上角
         let screenRect = getActiveScreen().visibleFrame
         let hudWidth: CGFloat = 160
@@ -83,14 +89,18 @@ class HUDWindowController: NSWindowController {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15 // 将动画缩短，更丝滑
             self.window?.animator().alphaValue = 1.0
-        }, completionHandler: {
-            // 设置延时隐藏
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.hideHUD()
-            }
-            self.hideWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
+        }, completionHandler: { [weak self] in
+            self?.resetHideTimer()
         })
+    }
+    
+    private func resetHideTimer() {
+        hideWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.hideHUD()
+        }
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
     }
     
     private func hideHUD() {
