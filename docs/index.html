@@ -36,8 +36,7 @@
                 <div class="badge">开源项目 &middot; macOS 专属</div>
                 <h1 class="hero-title">极致丝滑的<br><span class="text-gradient">智能输入法切换器</span></h1>
                 <p class="hero-subtitle">
-                    告别被满屏全角半角打断的痛苦体验。<br>
-                    全自动感知文本焦点，底层死锁防抖，让您的键盘永远处于最完美的工作状态。
+                    0 卡顿，全自动感知。基于底层 TIS 缓存优化与事件合并技术，无需辅助功能权限，在守护隐私的同时提供最顺滑的 macOS 输入体验。
                 </p>
                 <div class="hero-actions">
                     <a href="https://github.com/framecy/SimpleSwitch/releases" class="btn btn-primary">
@@ -60,6 +59,49 @@
                 </div>
             </div>
         </main>
+
+        <!-- 功能展示区 -->
+        <section id="features" class="features-grid">
+            <div class="feature-card glass-card">
+                <div class="feature-icon">🎯</div>
+                <h3>按应用定制策略</h3>
+                <p>为每个应用设置专属策略：强制英文、强制中文或保持现状，灵活掌控每个工作流。</p>
+            </div>
+            <div class="feature-card glass-card">
+                <div class="feature-icon">🚀</div>
+                <h3>极速性能优化</h3>
+                <p>独家 TIS 缓存与 Dispatch 事件合并技术，彻底解决系统底层锁导致的输入卡顿。</p>
+            </div>
+            <div class="feature-card glass-card">
+                <div class="feature-icon">🛡️</div>
+                <h3>隐私与安全</h3>
+                <p>100% 运行在沙箱安全边界，无需开启“辅助功能”权限即可感知焦点切换，隐私无解。</p>
+            </div>
+            <div class="feature-card glass-card">
+                <div class="feature-icon">✨</div>
+                <h3>极致简约 HUD</h3>
+                <p>重新设计的深色半透明 HUD，智能跟随鼠标所在屏幕。极简设计，不抢夺系统焦点。</p>
+            </div>
+        </section>
+
+        <!-- 技术架构简述 -->
+        <section class="tech-stack">
+            <h2 class="section-title">重新定义的切换逻辑</h2>
+            <div class="tech-items">
+                <div class="tech-item">
+                    <span class="tech-label">TIS 缓存</span>
+                    <p>通过缓存输入法状态 ID，减少 90% 的跨进程系统调用负担。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">事件去重</span>
+                    <p>自动过滤同应用重复激活事件，配合 WorkItem 合并快速 Cmd+Tab 操作。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">懒加载菜单</span>
+                    <p>菜单仅在点击时实时构建，消除应用切换时的 UI 主线程渲染压力。</p>
+                </div>
+            </div>
+        </section>
 
         <!-- 页面底部 (Footer) -->
         <footer class="footer">
