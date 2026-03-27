@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var isEnabled = true
     var hudController: HUDWindowController?
+    var welcomeController: WelcomeWindowController?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -23,9 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         // ── 性能优化：菜单懒构建，仅在用户点击时才构建 ──
-        // 不再监听 onAppChanged 来频繁调用 setupMenu()
         InputMethodManager.shared.onAppChanged = { [weak self] in
-            // 只更新状态栏标题，菜单将在打开时动态构建
             self?.updateStatusBarButtonTitle()
         }
         
@@ -48,6 +47,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+        
+        // ── Onboarding：首次运行显示欢迎页面 ──
+        if !UserDefaults.standard.bool(forKey: "HasSeenWelcomePagev2") {
+            welcomeController = WelcomeWindowController()
+            welcomeController?.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
     
     func updateStatusBarButtonTitle() {
